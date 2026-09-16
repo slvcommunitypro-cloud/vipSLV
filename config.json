@@ -1,0 +1,9 @@
+{
+  "appName": "PO Desk",
+  "serverUrl": "",
+  "supabaseUrl": "",
+  "supabaseAnonKey": "",
+  "adminTelegramId": "",
+  "telegramBotUsername": "",
+  "defaultLocale": "ru"
+}

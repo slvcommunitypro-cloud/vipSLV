@@ -1,0 +1,22 @@
+{
+  "appName": "PO Desk",
+  "online": "Online",
+  "deniedTitle": "Access denied",
+  "deniedText": "Your Telegram ID is not on the allowlist. Send it to the admin.",
+  "menu": {
+    "profile": "Profile",
+    "scanner": "Scanner",
+    "knowledge": "Library",
+    "patterns": "Patterns",
+    "calc": "Calculator",
+    "notes": "Notes"
+  },
+  "scanner": {
+    "title": "Market scanner",
+    "call": "CALL",
+    "put": "PUT",
+    "loading": "Loading candles…",
+    "live": "Live market",
+    "noData": "No quotes"
+  }
+}

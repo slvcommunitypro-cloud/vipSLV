@@ -1,0 +1,22 @@
+{
+  "appName": "PO Desk",
+  "online": "Онлайн",
+  "deniedTitle": "Нет доступа",
+  "deniedText": "Ваш Telegram ID не найден в списке. Передайте ID администратору.",
+  "menu": {
+    "profile": "Профиль",
+    "scanner": "Сканер",
+    "knowledge": "База",
+    "patterns": "Паттерны",
+    "calc": "Калькулятор",
+    "notes": "Заметки"
+  },
+  "scanner": {
+    "title": "Сканер рынка",
+    "call": "CALL",
+    "put": "PUT",
+    "loading": "Загрузка свечей…",
+    "live": "Живой рынок",
+    "noData": "Нет котировок"
+  }
+}
