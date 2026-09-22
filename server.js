@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
+const poQuotes = require("./po-quotes");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8787);
@@ -11,7 +12,6 @@ const ADMIN_ID = String(process.env.ADMIN_TELEGRAM_ID || "").trim();
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(ROOT));
 
 function readJson(file, fallback) {
   try {
@@ -51,11 +51,29 @@ function createSupabase() {
   }
 }
 
-app.get("/api/health", (_req, res) => {
+function sendIndex(res) {
+  try {
+    let html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    if (html.indexOf("slv-po-patch.js") === -1) {
+      html = html.replace("</body>", '<script src="slv-po-patch.js"></script>\n</body>');
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
+  } catch (e) {
+    return res.status(500).send("index.html not found");
+  }
+}
+
+app.get("/", sendIndex);
+app.get("/index.html", sendIndex);
+
+app.get("/api/health", async (_req, res) => {
+  const po = await poQuotes.liveHealth().catch(() => ({ connected: false }));
   res.json({
     ok: true,
     supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
-    adminConfigured: Boolean(ADMIN_ID)
+    adminConfigured: Boolean(ADMIN_ID),
+    pocket: po
   });
 });
 
@@ -136,10 +154,39 @@ app.post("/api/admin/remove-user", async (req, res) => {
   res.json({ ok: true, users });
 });
 
-app.get("/api/payouts", (_req, res) => {
-  res.json({ EURUSD: 82, GBPUSD: 80, BTCUSD: 85, XAUUSD: 81 });
+app.get("/api/payouts", async (_req, res) => {
+  try {
+    const live = poQuotes.payouts();
+    return res.json(Object.assign({
+      EURUSD: 82, GBPUSD: 80, BTCUSD: 85, XAUUSD: 81
+    }, live.pairs || {}, live));
+  } catch (e) {
+    res.json({ EURUSD: 82, GBPUSD: 80, BTCUSD: 85, XAUUSD: 81 });
+  }
 });
+
+app.get("/api/candles", async (req, res) => {
+  const pair = req.query.pair || req.query.symbol || "EURUSD_otc";
+  const period = req.query.period || req.query.tf || "60";
+  try {
+    const data = await poQuotes.liveCandles(pair, period);
+    res.json(data);
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/api/po/health", async (_req, res) => {
+  try {
+    res.json(await poQuotes.liveHealth());
+  } catch (e) {
+    res.json({ ok: false, connected: false, fallback: true, error: e.message });
+  }
+});
+
+app.use(express.static(ROOT));
 
 app.listen(PORT, () => {
   console.log("[po-desk] http://localhost:" + PORT);
+  console.log("[po-desk] PO_GATEWAY_URL=" + (process.env.PO_GATEWAY_URL || "(empty, using market fallback)"));
 });
