@@ -397,7 +397,12 @@
       (groups[key] || []).forEach(function (row) {
         var display = row.display || row.symbol || row.pair || row.name;
         if (!display) return;
-        cats[target].push({ display: display, payout: Math.round(Number(row.payout || row.percent || 0)) });
+        cats[target].push({
+          display: display,
+          symbol: row.symbol || display,
+          payout: Math.round(Number(row.payout || row.percent || 0)),
+          active: row.active !== false
+        });
       });
     });
     if (!cats.forex.length && data && data.pairs && typeof data.pairs === 'object') {
@@ -405,7 +410,12 @@
         var row = data.pairs[sym] || {};
         var display = row.display || sym;
         var target = categoryOf(row.type, '');
-        cats[target].push({ display: display, payout: Math.round(Number(row.payout || 0)) });
+        cats[target].push({
+          display: display,
+          symbol: row.id || row.symbol || display,
+          payout: Math.round(Number(row.payout || 0)),
+          active: row.active !== false
+        });
       });
     }
     var total = 0;
@@ -417,7 +427,12 @@
         seen[id] = true;
         return true;
       });
-      cats[k].sort(function (a, b) { return (b.payout || 0) - (a.payout || 0); });
+      cats[k].sort(function (a, b) {
+        var ao = a.active === false ? 1 : 0;
+        var bo = b.active === false ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return (b.payout || 0) - (a.payout || 0);
+      });
       total += cats[k].length;
     });
     if (!total) return false;
@@ -464,11 +479,20 @@
     } else {
       filtered.forEach(function (pair) {
         var row = document.createElement('div');
+        var closed = pair.active === false;
         row.className = 'pair-row';
-        row.addEventListener('click', function () { window.launchFullscreenAnalysis(pair.display); });
-        var pay = pair.payout ? '<span style="color:#3dff8a;font-weight:900;margin-right:8px;">' + pair.payout + '%</span>' : '';
-        var top = pair.payout >= 92 ? ' <span style="font-size:10px;color:#1fd47a;font-weight:800;">TOP</span>' : '';
-        row.innerHTML = '<span>' + pair.display + top + '</span><span>' + pay + '<span style="color:var(--neon-green);font-size:13px;font-weight:900;">M1 →</span></span>';
+        if (closed) {
+          row.style.opacity = '0.45';
+          row.style.cursor = 'default';
+        } else {
+          row.addEventListener('click', function () { window.launchFullscreenAnalysis(pair.display); });
+        }
+        var pay = '<span style="color:' + (closed ? '#8d97a6' : '#3dff8a') + ';font-weight:900;margin-right:8px;">' + (pair.payout || 0) + '%</span>';
+        var top = !closed && pair.payout >= 92 ? ' <span style="font-size:10px;color:#1fd47a;font-weight:800;">92+</span>' : '';
+        var state = closed
+          ? '<span style="color:#ff4d6d;font-size:11px;font-weight:900;">ЗАКРЫТА</span>'
+          : '<span style="color:var(--neon-green);font-size:13px;font-weight:900;">M1 →</span>';
+        row.innerHTML = '<span>' + pair.display + top + '</span><span>' + pay + state + '</span>';
         renderBox.appendChild(row);
       });
     }
@@ -485,7 +509,7 @@
       var data = await res.json();
       if (!absorbPayouts(data)) throw new Error('empty payouts');
       var source = (data && data.source) || 'pocketoption';
-      setPoStatus(source.indexOf('fallback') >= 0 ? 'POCKET OPTION • доска выплат' : 'POCKET OPTION • LIVE');
+      setPoStatus(source.indexOf('demo') >= 0 || source.indexOf('pocket') >= 0 ? 'POCKET OPTION • выплаты как в терминале' : 'POCKET OPTION • доска выплат');
       if (typeof window.filterAnalysisPairs === 'function') window.filterAnalysisPairs();
     } catch (e) {
       setPoStatus('POCKET OPTION • нет связи со шлюзом');
@@ -674,6 +698,12 @@
     window.switchScreen = function (id) {
       if (typeof origSwitch === 'function') origSwitch.apply(this, arguments);
       if (id === 'bot-analysis-screen') refreshPocketPairs();
+      if (!window.__slvPayoutTimer) {
+        window.__slvPayoutTimer = setInterval(function () {
+          var screen = document.getElementById('bot-analysis-screen');
+          if (screen && screen.classList.contains('active')) refreshPocketPairs();
+        }, 20000);
+      }
     };
     window.closeFullscreenAnalysis = function () {
       stopScanTimers();
