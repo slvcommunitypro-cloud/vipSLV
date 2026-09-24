@@ -52,38 +52,27 @@
         close: close
       });
     }
-    if (rows.length < 3) return rows;
-    var flat = 0;
+    return rows.map(function (c) {
+      return {
+        t: c.t,
+        open: c.open,
+        close: c.close,
+        high: Math.max(c.high, c.open, c.close),
+        low: Math.min(c.low, c.open, c.close)
+      };
+    });
+  }
+
+  function isPocketHistory(rows, source) {
+    var src = String(source || '');
+    if (/fallback|synth|yahoo|market/i.test(src)) return false;
+    if (!rows || rows.length < 8) return false;
+    var ranged = 0;
     rows.forEach(function (c) {
       var scale = Math.abs(c.close) || 1;
-      if (Math.abs(c.close - c.open) < scale * 0.00003 && (c.high - c.low) < scale * 0.00008) flat += 1;
+      if ((c.high - c.low) > scale * 0.00004) ranged += 1;
     });
-    if (flat / rows.length < 0.45) {
-      return rows.map(function (c) {
-        return {
-          t: c.t,
-          open: c.open,
-          close: c.close,
-          high: Math.max(c.high, c.open, c.close),
-          low: Math.min(c.low, c.open, c.close)
-        };
-      });
-    }
-    var built = [];
-    for (var i = 0; i < rows.length; i++) {
-      var close = rows[i].close;
-      var open = i === 0 ? rows[i].open : built[i - 1].close;
-      var body = Math.abs(close - open);
-      var wick = Math.max(body * 0.45, Math.abs(close) * 0.00006);
-      built.push({
-        t: rows[i].t,
-        open: open,
-        close: close,
-        high: Math.max(open, close) + wick,
-        low: Math.min(open, close) - wick
-      });
-    }
-    return built;
+    return ranged / rows.length >= 0.5;
   }
 
   function sma(arr, n) {
@@ -194,8 +183,20 @@
     var box = fitCanvas($('po-candle-canvas'));
     var ctx = box.ctx, w = box.w, h = box.h;
     if (!ctx) return;
-    var rows = sanitizeCandles(candles).slice(-40);
+    var rows = sanitizeCandles(candles).slice(-48);
     if (!rows.length) return;
+    if (!isPocketHistory(rows, candles && candles.__source)) {
+      ctx.fillStyle = '#0b1118';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#d5deea';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Нет истории свечей Pocket Option', w / 2, h / 2 - 8);
+      ctx.fillStyle = '#8ea0b5';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('Шлюз не подключён к сессии терминала', w / 2, h / 2 + 12);
+      return;
+    }
     ctx.fillStyle = '#0b1118';
     ctx.fillRect(0, 0, w, h);
     var padL = 10, padR = 64, padT = 14, padB = 16;
@@ -244,19 +245,14 @@
       var bot = y(c.low);
       var y1 = y(Math.max(c.open, c.close));
       var y2 = y(Math.min(c.open, c.close));
-      if (y2 - y1 < 6) {
-        var mid = (y1 + y2) / 2;
-        y1 = mid - 3;
-        y2 = mid + 3;
-      }
       ctx.strokeStyle = color;
       ctx.fillStyle = color;
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
       ctx.moveTo(x + cw / 2, top);
       ctx.lineTo(x + cw / 2, bot);
       ctx.stroke();
-      ctx.fillRect(x, y1, cw, Math.max(6, y2 - y1));
+      ctx.fillRect(x, y1, cw, Math.max(2, y2 - y1));
     });
     var quoteColor = last.close >= last.open ? '#1ee687' : '#ff4d6d';
     ctx.setLineDash([3, 3]);
@@ -389,19 +385,64 @@
     }
   }
 
+  var poLink = null;
+  async function pocketConnected() {
+    if (poLink && Date.now() - poLink.at < 15000) return poLink.ok;
+    try {
+      var res = await fetch(apiBase() + '/api/po/health', { cache: 'no-store' });
+      var data = await res.json();
+      poLink = { at: Date.now(), ok: !!(data && data.connected) };
+    } catch (e) {
+      poLink = { at: Date.now(), ok: false };
+    }
+    return poLink.ok;
+  }
+
   async function fetchPocketCandles(pairName, tf) {
     var period = Math.max(60, Number(tf || 1) * 60);
+    var pocketLive = await pocketConnected();
     var res = await fetch(apiBase() + '/api/candles?pair=' + encodeURIComponent(pairName) + '&period=' + period, { cache: 'no-store' });
     if (!res.ok) throw new Error('candles ' + res.status);
     var data = await res.json();
     var rows = (data && data.candles) || [];
     if (!rows.length) throw new Error('empty');
     return {
-      candles: sanitizeCandles(rows.map(function (c) {
-        return { t: c.t || (c.time * 1000), open: +c.open, high: +c.high, low: +c.low, close: +c.close };
-      })),
-      source: data.source || 'pocketoption'
+      candles: (function () {
+        var list = sanitizeCandles(rows.map(function (c) {
+          return { t: c.t || (c.time * 1000), open: +c.open, high: +c.high, low: +c.low, close: +c.close };
+        }));
+        var src = data.source || '';
+        if (!/pocket/i.test(src)) src = pocketLive ? 'pocketoption-api' : (src || 'fallback-market');
+        list.__source = src;
+        return list;
+      })(),
+      source: (data.source && /pocket/i.test(data.source)) ? data.source : (pocketLive ? 'pocketoption-api' : (data.source || 'fallback-market'))
     };
+  }
+
+  function unlockScanScroll(overlay) {
+    if (!overlay) return;
+    overlay.style.setProperty('display', 'block', 'important');
+    overlay.style.setProperty('overflow-x', 'hidden', 'important');
+    overlay.style.setProperty('overflow-y', 'scroll', 'important');
+    overlay.style.setProperty('height', '100dvh', 'important');
+    overlay.style.setProperty('max-height', '100dvh', 'important');
+    overlay.style.setProperty('-webkit-overflow-scrolling', 'touch');
+    overlay.style.touchAction = 'pan-y';
+    overlay.style.overscrollBehavior = 'contain';
+    var desk = overlay.querySelector('.po-desk');
+    if (desk) {
+      desk.style.minHeight = 'auto';
+      desk.style.height = 'auto';
+      desk.style.overflow = 'visible';
+    }
+    var card = $('radar-final-result');
+    if (card) {
+      card.style.overflow = 'visible';
+      card.style.maxHeight = 'none';
+      card.style.maxWidth = '100%';
+    }
+    overlay.scrollTop = 0;
   }
 
   function ensureScanOverlay() {
@@ -539,7 +580,7 @@
       var radarAnim = $('radar-animation-element');
       var marketView = $('scanning-market-view');
       if (!overlay) return;
-      overlay.style.setProperty('display', 'flex', 'important');
+      unlockScanScroll(overlay);
       if (radarAnim) radarAnim.style.display = 'none';
       if (marketView) marketView.style.display = 'block';
       if (finalBlock) finalBlock.style.display = 'none';
@@ -556,21 +597,30 @@
       startNextCandleClock(tf);
       try {
         var pack = await fetchPocketCandles(pairName, tf);
+        var fromPocket = isPocketHistory(pack.candles, pack.source);
         var analysis = analyzeMarket(pack.candles);
+        if (!fromPocket) analysis.wait = true;
         drawPocketChart(pack.candles, analysis);
         setTimeout(function () {
           setScanOverlay(false);
           if (finalBlock) finalBlock.style.display = 'block';
           paintVerdict(pairName, tfLabel, analysis);
-          if (statusText) statusText.textContent = 'POCKET API • ЖИВОЙ ' + tfLabel;
+          if (statusText) statusText.textContent = fromPocket ? ('POCKET OPTION • ' + tfLabel) : 'НЕТ СЕССИИ POCKET OPTION';
+          var banner = $('scan-pattern-banner');
+          if (!fromPocket && banner) {
+            banner.textContent = 'График не с терминала Pocket Option. История свечей приходит только после подключения сессии (changeSymbol). Запасной ряд не совпадает с OTC-графиком, поэтому свечи не подменяю.';
+          }
+          unlockScanScroll(overlay);
         }, 1600);
         scanPriceTimer = setInterval(async function () {
           try {
             var fresh = await fetchPocketCandles(pairName, tf);
+            var liveOk = isPocketHistory(fresh.candles, fresh.source);
             var live = analyzeMarket(fresh.candles);
+            if (!liveOk) live.wait = true;
             drawPocketChart(fresh.candles, live);
             paintVerdict(pairName, tfLabel, live);
-            if (statusText) statusText.textContent = 'POCKET API • ЖИВОЙ ' + tfLabel;
+            if (statusText) statusText.textContent = liveOk ? ('POCKET OPTION • ' + tfLabel) : 'НЕТ СЕССИИ POCKET OPTION';
           } catch (err) {}
         }, 2000);
       } catch (e) {
