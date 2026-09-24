@@ -4805,7 +4805,7 @@
                 filteredList.forEach(pair => {
                     const row = document.createElement('div');
                     row.className = 'pair-row';
-                    row.addEventListener('click', () => launchFullscreenAnalysis(pair));
+                    row.addEventListener('click', () => window.launchFullscreenAnalysis(pair));
                     
                     // Add small category badge
                     let catBadge = '';
@@ -6308,5 +6308,6 @@
         </div>
     </div>
 
+    <script src="scanner-po.js"></script>
 </body>
 </html>
