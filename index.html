@@ -5635,6 +5635,12 @@
 
                 inputEl.value = '';
                 appendMsg('ai-chat-container', txt, 'user');
+                var who = txt.toLowerCase().replace(/[?!.,]/g, '').trim();
+                if (/^(кто ты|ты кто|кто вы|как ты|как тебя зовут|что ты|что ты такое|ты кто такой|представься|ты бот|ты ии|ты искусственный интеллект)$/.test(who)) {
+                    if (typing) typing.style.display = 'none';
+                    appendMsg('ai-chat-container', 'Я искусственный интеллект SLV Community Pro для помощи по торговле в Pocket Option. Хочешь получить сигналы? Переходи в сканер котировок и начинай работать', 'bot');
+                    return;
+                }
                 
                 const typing = document.getElementById('ai-chat-typing');
                 if(typing) {
@@ -5656,8 +5662,9 @@
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
+                            mode: 'chat',
                             messages: history.slice(-8),
-                            context: window.__slvChatContext || {}
+                            context: {}
                         })
                     });
                     const data = await res.json();

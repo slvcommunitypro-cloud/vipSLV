@@ -666,7 +666,10 @@
       if (verdict) { verdict.textContent = 'PUT · Фибо · вход от ' + entry + ' · ' + tfLabel; verdict.className = 'ta-verdict sell'; }
     }
     var banner = $('scan-pattern-banner');
-    if (banner) banner.innerHTML = (analysis.reasons || []).join('<br>');
+    if (banner) {
+      var extra = (window.__slvForecast && window.__slvForecast.pair === pair) ? window.__slvForecast.text : '';
+      banner.innerHTML = (analysis.reasons || []).join('<br>') + (extra ? '<br><br>' + extra : '');
+    }
     var call = $('scan-call-side');
     var put = $('scan-put-side');
     if (call && put) {
@@ -687,6 +690,31 @@
       rsi: analysis.rsi,
       closes: analysis.closes || []
     };
+  }
+
+  var forecastToken = 0;
+  function askScannerForecast(pair, analysis) {
+    if (!analysis || analysis.wait) return;
+    var token = ++forecastToken;
+    var banner = $('scan-pattern-banner');
+    if (banner) banner.innerHTML = (analysis.reasons || []).join('<br>') + '<br><span style="color:#9aa8b8;">Считаю прогноз на следующую минуту…</span>';
+    var base = 'https://slv-vip-community.onrender.com';
+    fetch(base + '/api/ai-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'forecast',
+        messages: [{ role: 'user', content: 'Прогноз на следующую минуту по ' + pair }],
+        context: window.__slvChatContext || {}
+      })
+    }).then(function (res) { return res.json(); }).then(function (data) {
+      if (token !== forecastToken) return;
+      var text = (data && (data.answer || data.error)) || '';
+      if (!text) return;
+      window.__slvForecast = { pair: pair, text: String(text).replace(/\n/g, '<br>') };
+      if (!banner) return;
+      banner.innerHTML = (analysis.reasons || []).join('<br>') + '<br><br>' + window.__slvForecast.text;
+    }).catch(function () {});
   }
 
   function stopScanTimers() {
@@ -741,6 +769,7 @@
       var radarAnim = $('radar-animation-element');
       var marketView = $('scanning-market-view');
       if (!overlay) return;
+      window.__slvForecast = null;
       unlockScanScroll(overlay);
       if (radarAnim) radarAnim.style.display = 'none';
       if (marketView) marketView.style.display = 'block';
@@ -766,6 +795,7 @@
           setScanOverlay(false);
           if (finalBlock) finalBlock.style.display = 'block';
           paintVerdict(pairName, tfLabel, analysis);
+          if (fromPocket) askScannerForecast(pairName, analysis);
           if (statusText) statusText.textContent = fromPocket ? ('POCKET OPTION • ' + tfLabel) : 'НЕТ СЕССИИ POCKET OPTION';
           var banner = $('scan-pattern-banner');
           if (!fromPocket && banner) {
