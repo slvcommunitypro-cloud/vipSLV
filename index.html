@@ -5644,24 +5644,27 @@
                 }
 
                 try {
-                    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    const aiBase = (SERVER_URL || "https://slv-vip-community.onrender.com").replace(/\/$/, "");
+                    const history = [];
+                    document.querySelectorAll('#ai-chat-container .chat-msg').forEach(function (node) {
+                        if (node.id === 'ai-chat-typing') return;
+                        const role = node.classList.contains('user') ? 'user' : 'assistant';
+                        const content = (node.innerText || '').trim();
+                        if (content) history.push({ role: role, content: content });
+                    });
+                    const res = await fetch(aiBase + "/api/ai-chat", {
                         method: "POST",
-                        headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                            model: "llama-3.3-70b-versatile",
-                            messages: [
-                                { role: "system", content: "Ты — продвинутый ИИ-аналитик торгового клуба VIP COMMUNITY PRO. Отвечай кратко, профессионально." },
-                                { role: "user", content: txt }
-                            ],
-                            temperature: 0.5
+                            messages: history.slice(-8),
+                            context: window.__slvChatContext || {}
                         })
                     });
                     const data = await res.json();
                     if(typing) typing.style.display = 'none';
-
-                    if (data.choices && data.choices[0]) {
-                        let answer = data.choices[0].message.content;
-                        appendMsg('ai-chat-container', answer.replace(/\*\*(.*?)\*\*/g, '<b style="color:var(--neon-green);">$1</b>').replace(/\n/g, '<br>'), 'bot', true);
+                    const answer = data.answer || data.error;
+                    if (answer) {
+                        appendMsg('ai-chat-container', String(answer).replace(/\*\*(.*?)\*\*/g, '<b style="color:var(--neon-green);">$1</b>').replace(/\n/g, '<br>'), 'bot', true);
                     }
                 } catch(e) {
                     if(typing) typing.style.display = 'none';

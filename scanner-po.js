@@ -253,7 +253,8 @@
     return {
       isUp: isUp, wait: wait, last: last, entry: last, sma9: sma9, sma20: sma20, rsi: r, vol: vol,
       levels: levels, accuracy: accuracy, score: score, pattern: pattern, fib: fib,
-      reasons: [reason, 'Фибо 0 / 0.5 / 0.618 / 0.786 / 1', pattern.name + ' · RSI ' + r.toFixed(1)]
+      reasons: [reason, 'Фибо 0 / 0.5 / 0.618 / 0.786 / 1', pattern.name + ' · RSI ' + r.toFixed(1)],
+      closes: series.slice(-12).map(function (c) { return Number(c.close); })
     };
   }
 
@@ -667,6 +668,13 @@
       price.textContent = analysis.last.toFixed(digitsFor(analysis.last));
       price.className = 'po-price ' + (analysis.wait ? 'neutral' : (analysis.isUp ? '' : 'down'));
     }
+    window.__slvChatContext = {
+      pair: pair,
+      price: analysis.last,
+      reason: (analysis.reasons && analysis.reasons[0]) || '',
+      rsi: analysis.rsi,
+      closes: analysis.closes || []
+    };
   }
 
   function stopScanTimers() {
