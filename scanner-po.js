@@ -162,6 +162,16 @@
     };
   }
 
+  function settledBars(rows) {
+    if (!rows || rows.length < 3) return rows || [];
+    var last = rows[rows.length - 1];
+    var start = Number(last.t || last.time || 0);
+    if (start > 0 && start < 1000000000000) start *= 1000;
+    var minuteStart = Math.floor(Date.now() / 60000) * 60000;
+    if (start >= minuteStart) return rows.slice(0, -1);
+    return rows;
+  }
+
   function minuteCall(fib, rows) {
     var last = rows[rows.length - 1];
     var prev = rows.length > 1 ? rows[rows.length - 2] : last;
@@ -171,40 +181,41 @@
     var micro = last.close - prev.close;
     var ratio = fib ? fib.ratio : 0.5;
     var place = (Math.round(ratio * 1000) / 10).toFixed(1);
+    var when = ' Вход на открытии следующей M1, экспирация — её закрытие.';
     var isUp;
     var accuracy;
     var reason;
     if (!fib) {
       isUp = slope >= 0;
       accuracy = 58;
-      reason = isUp ? 'Тики минуты вверх. CALL.' : 'Тики минуты вниз. PUT.';
+      reason = (isUp ? 'Закрытые минуты вверх. CALL.' : 'Закрытые минуты вниз. PUT.') + when;
     } else if (fib.up && ratio >= 0.5) {
       isUp = true;
       accuracy = 68;
-      reason = 'Фибо ' + place + '% под серединой импульса вверх. CALL на эту минуту.';
+      reason = 'Фибо ' + place + '% под серединой импульса вверх. CALL.' + when;
     } else if (!fib.up && ratio >= 0.5) {
       isUp = false;
       accuracy = 68;
-      reason = 'Фибо ' + place + '% под серединой импульса вниз. PUT на эту минуту.';
+      reason = 'Фибо ' + place + '% под серединой импульса вниз. PUT.' + when;
     } else if (ratio <= 0.382 && micro <= 0) {
       isUp = false;
       accuracy = 64;
-      reason = 'Фибо ' + place + '% у уровня 0, тик вниз. PUT на эту минуту.';
+      reason = 'Фибо ' + place + '% у уровня 0, последняя закрытая минута вниз. PUT.' + when;
     } else if (ratio <= 0.382 && micro > 0) {
       isUp = true;
       accuracy = 62;
-      reason = 'Фибо ' + place + '% у уровня 0, тик вверх. CALL на эту минуту.';
+      reason = 'Фибо ' + place + '% у уровня 0, последняя закрытая минута вверх. CALL.' + when;
     } else if (slope >= 0) {
       isUp = true;
       accuracy = 60;
-      reason = 'Фибо ' + place + '%, тики минуты вверх. CALL.';
+      reason = 'Фибо ' + place + '%, закрытые минуты вверх. CALL.' + when;
     } else {
       isUp = false;
       accuracy = 60;
-      reason = 'Фибо ' + place + '%, тики минуты вниз. PUT.';
+      reason = 'Фибо ' + place + '%, закрытые минуты вниз. PUT.' + when;
     }
-    var bucket = Math.floor((last.t || Date.now()) / 60000);
-    var lock = (fib ? fib.start.price : 0) + ':' + bucket;
+    var nextOpen = Math.floor(Date.now() / 60000) + 1;
+    var lock = (fib ? Math.round(fib.start.price * 100000) : 0) + ':' + nextOpen;
     if (!minuteCall.cache) minuteCall.cache = null;
     if (minuteCall.cache && minuteCall.cache.lock === lock) return minuteCall.cache.call;
     var call = { wait: false, isUp: isUp, accuracy: accuracy, reason: reason };
@@ -236,8 +247,9 @@
     score += pattern.bias;
     if (lastClosed.close <= levels.support + range * 0.16 && pattern.bias >= 0) score += 2;
     if (lastClosed.close >= levels.resistance - range * 0.16 && pattern.bias <= 0) score -= 2;
-    var fib = fibRetracement(series);
-    var fibCall = minuteCall(fib, series);
+    var settled = settledBars(series);
+    var fib = fibRetracement(settled);
+    var fibCall = minuteCall(fib, settled);
     var wait = false;
     var isUp = fibCall ? fibCall.isUp : score > 0;
     var accuracy = fibCall ? fibCall.accuracy : (wait ? 52 : Math.max(60, Math.min(72, 58 + Math.min(3, Math.abs(score)) * 4 + (pattern.bias ? 2 : 0))));
