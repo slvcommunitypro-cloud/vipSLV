@@ -162,39 +162,58 @@
     };
   }
 
-  function fibSignal(fib, rows) {
-    if (!fib || !rows.length) return null;
-    var ratio = fib.ratio;
+  function minuteCall(fib, rows) {
     var last = rows[rows.length - 1];
-    var keys = [0.5, 0.618, 0.786];
-    var near = keys[0];
-    var dist = Math.abs(ratio - near);
-    for (var i = 1; i < keys.length; i++) {
-      var d = Math.abs(ratio - keys[i]);
-      if (d < dist) { dist = d; near = keys[i]; }
-    }
-    var pct = String(near).replace(/(\.\d*?)0+$/, '$1');
+    var prev = rows.length > 1 ? rows[rows.length - 2] : last;
+    var closes = rows.slice(-6).map(function (c) { return c.close; });
+    var slope = 0;
+    for (var i = 1; i < closes.length; i++) slope += closes[i] - closes[i - 1];
+    var micro = last.close - prev.close;
+    var ratio = fib ? fib.ratio : 0.5;
     var place = (Math.round(ratio * 1000) / 10).toFixed(1);
-    if (ratio > 1.05) {
-      return { wait: true, isUp: false, accuracy: 52, reason: 'Фибо: импульс сломан, уровень 1 пробит. Входа нет.' };
+    var isUp;
+    var accuracy;
+    var reason;
+    if (!fib) {
+      isUp = slope >= 0;
+      accuracy = 58;
+      reason = isUp ? 'Тики минуты вверх. CALL.' : 'Тики минуты вниз. PUT.';
+    } else if (fib.up && ratio >= 0.5) {
+      isUp = true;
+      accuracy = 68;
+      reason = 'Фибо ' + place + '% под серединой импульса вверх. CALL на эту минуту.';
+    } else if (!fib.up && ratio >= 0.5) {
+      isUp = false;
+      accuracy = 68;
+      reason = 'Фибо ' + place + '% под серединой импульса вниз. PUT на эту минуту.';
+    } else if (ratio <= 0.382 && micro <= 0) {
+      isUp = false;
+      accuracy = 64;
+      reason = 'Фибо ' + place + '% у уровня 0, тик вниз. PUT на эту минуту.';
+    } else if (ratio <= 0.382 && micro > 0) {
+      isUp = true;
+      accuracy = 62;
+      reason = 'Фибо ' + place + '% у уровня 0, тик вверх. CALL на эту минуту.';
+    } else if (slope >= 0) {
+      isUp = true;
+      accuracy = 60;
+      reason = 'Фибо ' + place + '%, тики минуты вверх. CALL.';
+    } else {
+      isUp = false;
+      accuracy = 60;
+      reason = 'Фибо ' + place + '%, тики минуты вниз. PUT.';
     }
-    if (ratio < 0.45 || ratio > 0.82) {
-      var why = ratio < 0.32
-        ? 'Фибо: цена у уровня 0. Жду откат к 0.5 / 0.618 / 0.786.'
-        : 'Фибо: цена между уровнями (' + place + '%). Жду 0.5, 0.618 или 0.786.';
-      return { wait: true, isUp: fib.up, accuracy: 52, reason: why };
-    }
-    var reject = fib.up ? last.close >= last.open : last.close < last.open;
-    var accuracy = near === 0.618 ? 70 : (near === 0.5 ? 64 : 66);
-    if (reject && dist < 0.08) accuracy += 4;
-    if (fib.up) {
-      return { wait: false, isUp: true, accuracy: Math.min(76, accuracy), reason: 'Фибо ' + pct + ': откат вверх-импульса. CALL к уровню 0.' };
-    }
-    return { wait: false, isUp: false, accuracy: Math.min(76, accuracy), reason: 'Фибо ' + pct + ': откат вниз-импульса. PUT к уровню 0.' };
+    var bucket = Math.floor((last.t || Date.now()) / 60000);
+    var lock = (fib ? fib.start.price : 0) + ':' + bucket;
+    if (!minuteCall.cache) minuteCall.cache = null;
+    if (minuteCall.cache && minuteCall.cache.lock === lock) return minuteCall.cache.call;
+    var call = { wait: false, isUp: isUp, accuracy: accuracy, reason: reason };
+    minuteCall.cache = { lock: lock, call: call };
+    return call;
   }
 
   function analyzeMarket(candles) {
-    var series = sanitizeCandles(candles).slice(-48);
+    var series = sanitizeCandles(candles).slice(-160);
     if (!series.length) {
       return { wait: true, isUp: false, last: 0, entry: 0, accuracy: 50, rsi: 50, sma9: 0, sma20: 0, vol: 0, reasons: ['Нет котировок'], levels: { support: 0, resistance: 0 }, pattern: { name: '', bias: 0 } };
     }
@@ -218,8 +237,8 @@
     if (lastClosed.close <= levels.support + range * 0.16 && pattern.bias >= 0) score += 2;
     if (lastClosed.close >= levels.resistance - range * 0.16 && pattern.bias <= 0) score -= 2;
     var fib = fibRetracement(series);
-    var fibCall = fibSignal(fib, series);
-    var wait = fibCall ? fibCall.wait : Math.abs(score) < 2;
+    var fibCall = minuteCall(fib, series);
+    var wait = false;
     var isUp = fibCall ? fibCall.isUp : score > 0;
     var accuracy = fibCall ? fibCall.accuracy : (wait ? 52 : Math.max(60, Math.min(72, 58 + Math.min(3, Math.abs(score)) * 4 + (pattern.bias ? 2 : 0))));
     var reason = fibCall ? fibCall.reason : (wait
@@ -283,7 +302,7 @@
     var box = fitCanvas($('po-candle-canvas'));
     var ctx = box.ctx, w = box.w, h = box.h;
     if (!ctx) return;
-    var rows = sanitizeCandles(candles).slice(-48);
+    var rows = sanitizeCandles(candles).slice(-160);
     if (!rows.length) return;
     if (!isPocketHistory(rows, candles && candles.__source)) {
       ctx.fillStyle = '#0b1118';
@@ -307,7 +326,7 @@
     min -= span * 0.1;
     function y(v) { return padT + (1 - (v - min) / (max - min)) * (h - padT - padB); }
     var step = (w - padL - padR) / rows.length;
-    var cw = Math.max(5, Math.min(14, step * 0.72));
+    var cw = Math.max(2, Math.min(9, step * 0.7));
     var last = rows[rows.length - 1];
     var digits = digitsFor(last.close);
     ctx.strokeStyle = 'rgba(255,255,255,0.045)';
