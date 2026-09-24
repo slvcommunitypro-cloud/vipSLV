@@ -123,8 +123,78 @@
     return { name: 'Без явного паттерна', bias: 0 };
   }
 
+  var FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.236, 1.272, 1.382, 1.5, 1.618, 1.786, 2.618];
+
+  function fibRetracement(rows) {
+    if (!rows || rows.length < 12) return null;
+    var hi = 0;
+    var lo = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].high > rows[hi].high) hi = i;
+      if (rows[i].low < rows[lo].low) lo = i;
+    }
+    if (hi === lo) return null;
+    var start;
+    var end;
+    var up;
+    if (lo < hi) {
+      start = { index: lo, price: rows[lo].low };
+      end = { index: hi, price: rows[hi].high };
+      up = true;
+    } else {
+      start = { index: hi, price: rows[hi].high };
+      end = { index: lo, price: rows[lo].low };
+      up = false;
+    }
+    var span = start.price - end.price;
+    if (!isFinite(span) || Math.abs(span) < Math.abs(end.price) * 0.00005) return null;
+    var last = rows[rows.length - 1].close;
+    var ratio = (last - end.price) / span;
+    return {
+      up: up,
+      start: start,
+      end: end,
+      span: span,
+      ratio: ratio,
+      levels: FIB_LEVELS.map(function (lv) {
+        return { level: lv, price: end.price + span * lv };
+      })
+    };
+  }
+
+  function fibSignal(fib, rows) {
+    if (!fib || !rows.length) return null;
+    var ratio = fib.ratio;
+    var last = rows[rows.length - 1];
+    var keys = [0.5, 0.618, 0.786];
+    var near = keys[0];
+    var dist = Math.abs(ratio - near);
+    for (var i = 1; i < keys.length; i++) {
+      var d = Math.abs(ratio - keys[i]);
+      if (d < dist) { dist = d; near = keys[i]; }
+    }
+    var pct = String(near).replace(/(\.\d*?)0+$/, '$1');
+    var place = (Math.round(ratio * 1000) / 10).toFixed(1);
+    if (ratio > 1.05) {
+      return { wait: true, isUp: false, accuracy: 52, reason: 'Фибо: импульс сломан, уровень 1 пробит. Входа нет.' };
+    }
+    if (ratio < 0.45 || ratio > 0.82) {
+      var why = ratio < 0.32
+        ? 'Фибо: цена у уровня 0. Жду откат к 0.5 / 0.618 / 0.786.'
+        : 'Фибо: цена между уровнями (' + place + '%). Жду 0.5, 0.618 или 0.786.';
+      return { wait: true, isUp: fib.up, accuracy: 52, reason: why };
+    }
+    var reject = fib.up ? last.close >= last.open : last.close < last.open;
+    var accuracy = near === 0.618 ? 70 : (near === 0.5 ? 64 : 66);
+    if (reject && dist < 0.08) accuracy += 4;
+    if (fib.up) {
+      return { wait: false, isUp: true, accuracy: Math.min(76, accuracy), reason: 'Фибо ' + pct + ': откат вверх-импульса. CALL к уровню 0.' };
+    }
+    return { wait: false, isUp: false, accuracy: Math.min(76, accuracy), reason: 'Фибо ' + pct + ': откат вниз-импульса. PUT к уровню 0.' };
+  }
+
   function analyzeMarket(candles) {
-    var series = sanitizeCandles(candles).slice(-40);
+    var series = sanitizeCandles(candles).slice(-48);
     if (!series.length) {
       return { wait: true, isUp: false, last: 0, entry: 0, accuracy: 50, rsi: 50, sma9: 0, sma20: 0, vol: 0, reasons: ['Нет котировок'], levels: { support: 0, resistance: 0 }, pattern: { name: '', bias: 0 } };
     }
@@ -147,23 +217,53 @@
     score += pattern.bias;
     if (lastClosed.close <= levels.support + range * 0.16 && pattern.bias >= 0) score += 2;
     if (lastClosed.close >= levels.resistance - range * 0.16 && pattern.bias <= 0) score -= 2;
-    var wait = Math.abs(score) < 2;
-    var isUp = score > 0;
-    var accuracy = wait ? 52 : Math.max(60, Math.min(72, 58 + Math.min(3, Math.abs(score)) * 4 + (pattern.bias ? 2 : 0)));
-    var reason = wait
+    var fib = fibRetracement(series);
+    var fibCall = fibSignal(fib, series);
+    var wait = fibCall ? fibCall.wait : Math.abs(score) < 2;
+    var isUp = fibCall ? fibCall.isUp : score > 0;
+    var accuracy = fibCall ? fibCall.accuracy : (wait ? 52 : Math.max(60, Math.min(72, 58 + Math.min(3, Math.abs(score)) * 4 + (pattern.bias ? 2 : 0))));
+    var reason = fibCall ? fibCall.reason : (wait
       ? 'Нет чистой точки входа: цена в середине диапазона.'
       : (isUp
         ? (pos <= 0.35 ? 'Цена у поддержки — CALL на открытии следующей минуты.' : 'Импульс вверх — CALL на следующей M1.')
-        : (pos >= 0.65 ? 'Цена у сопротивления — PUT на открытии следующей минуты.' : 'Импульс вниз — PUT на следующей M1.'));
+        : (pos >= 0.65 ? 'Цена у сопротивления — PUT на открытии следующей минуты.' : 'Импульс вниз — PUT на следующей M1.')));
     var slice = use.slice(-20);
     var vol = 0;
     slice.forEach(function (c) { vol += (c.high - c.low) / (c.close || 1); });
     vol = slice.length ? (vol / slice.length) * 100 : 0;
     return {
       isUp: isUp, wait: wait, last: last, entry: last, sma9: sma9, sma20: sma20, rsi: r, vol: vol,
-      levels: levels, accuracy: accuracy, score: score, pattern: pattern,
-      reasons: [reason, 'Support ' + levels.support.toFixed(digitsFor(last)) + ' · Resistance ' + levels.resistance.toFixed(digitsFor(last)), pattern.name + ' · RSI ' + r.toFixed(1)]
+      levels: levels, accuracy: accuracy, score: score, pattern: pattern, fib: fib,
+      reasons: [reason, 'Фибо 0 / 0.5 / 0.618 / 0.786 / 1', pattern.name + ' · RSI ' + r.toFixed(1)]
     };
+  }
+
+  function drawFib(ctx, fib, rows, y, padL, padR, step, w, h) {
+    if (!fib) return;
+    var xOf = function (index) { return padL + index * step + step / 2; };
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = 'rgba(30,230,135,0.9)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(xOf(fib.start.index), y(fib.start.price));
+    ctx.lineTo(xOf(fib.end.index), y(fib.end.price));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    fib.levels.forEach(function (lv) {
+      var gy = y(lv.price);
+      if (gy < 8 || gy > h - 8) return;
+      var golden = lv.level === 0.618 || lv.level === 0.5 || lv.level === 0;
+      ctx.strokeStyle = golden ? 'rgba(30,230,135,0.85)' : 'rgba(154,168,184,0.55)';
+      ctx.lineWidth = lv.level === 0.618 ? 1.6 : 1;
+      ctx.beginPath();
+      ctx.moveTo(padL + 34, gy);
+      ctx.lineTo(w - padR, gy);
+      ctx.stroke();
+      ctx.fillStyle = golden ? '#1ee687' : '#9aa8b8';
+      ctx.font = (lv.level === 0.618 ? 'bold ' : '') + '9px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(String(lv.level), 4, gy + 3);
+    });
   }
 
   function fitCanvas(canvas) {
@@ -199,7 +299,7 @@
     }
     ctx.fillStyle = '#0b1118';
     ctx.fillRect(0, 0, w, h);
-    var padL = 10, padR = 64, padT = 14, padB = 16;
+    var padL = 36, padR = 64, padT = 14, padB = 16;
     var max = Math.max.apply(null, rows.map(function (c) { return c.high; }));
     var min = Math.min.apply(null, rows.map(function (c) { return c.low; }));
     var span = (max - min) || Math.abs(rows[rows.length - 1].close) * 0.0008;
@@ -223,20 +323,7 @@
       ctx.stroke();
       ctx.fillText(val.toFixed(digits), w - 6, gy + 3);
     }
-    if (analysis && analysis.levels && analysis.levels.support) {
-      ctx.setLineDash([4, 5]);
-      ctx.strokeStyle = 'rgba(61,139,255,0.45)';
-      ctx.beginPath();
-      ctx.moveTo(padL, y(analysis.levels.resistance));
-      ctx.lineTo(w - padR, y(analysis.levels.resistance));
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(30,230,135,0.38)';
-      ctx.beginPath();
-      ctx.moveTo(padL, y(analysis.levels.support));
-      ctx.lineTo(w - padR, y(analysis.levels.support));
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+    var fib = (analysis && analysis.fib) || fibRetracement(rows);
     rows.forEach(function (c, idx) {
       var x = padL + idx * step + (step - cw) / 2;
       var up = c.close >= c.open;
@@ -254,6 +341,7 @@
       ctx.stroke();
       ctx.fillRect(x, y1, cw, Math.max(2, y2 - y1));
     });
+    if (fib) drawFib(ctx, fib, rows, y, padL, padR, step, w, h);
     var quoteColor = last.close >= last.open ? '#1ee687' : '#ff4d6d';
     ctx.setLineDash([3, 3]);
     ctx.strokeStyle = quoteColor;
@@ -492,7 +580,7 @@
     var title = $('analyzed-pair-title');
     if (title) title.textContent = pair + '  •  ' + tfLabel;
     var label = $('ta-summary-tf-label');
-    if (label) label.textContent = 'Техническая сводка (' + tfLabel + ') · ' + (analysis.pattern.name || 'PO');
+    if (label) label.textContent = 'Фибоначчи (' + tfLabel + ') · ' + (analysis.pattern.name || 'PO');
     var rsiEl = $('ta-rsi-val');
     if (rsiEl) rsiEl.textContent = Number(analysis.rsi || 0).toFixed(1);
     var s9 = $('ta-sma9-val');
@@ -514,11 +602,11 @@
     } else if (analysis.isUp) {
       if (arrow) { arrow.textContent = 'CALL ↑ СЛЕДУЮЩАЯ M' + scanTf; arrow.className = 'final-dir up'; arrow.style.color = ''; }
       if (fill) { fill.style.background = 'var(--neon-green)'; fill.style.boxShadow = '0 0 20px var(--neon-green)'; }
-      if (verdict) { verdict.textContent = 'CALL · вход от ' + entry + ' · ' + tfLabel; verdict.className = 'ta-verdict buy'; }
+      if (verdict) { verdict.textContent = 'CALL · Фибо · вход от ' + entry + ' · ' + tfLabel; verdict.className = 'ta-verdict buy'; }
     } else {
       if (arrow) { arrow.textContent = 'PUT ↓ СЛЕДУЮЩАЯ M' + scanTf; arrow.className = 'final-dir down'; arrow.style.color = ''; }
       if (fill) { fill.style.background = 'var(--neon-red)'; fill.style.boxShadow = '0 0 20px var(--neon-red)'; }
-      if (verdict) { verdict.textContent = 'PUT · вход от ' + entry + ' · ' + tfLabel; verdict.className = 'ta-verdict sell'; }
+      if (verdict) { verdict.textContent = 'PUT · Фибо · вход от ' + entry + ' · ' + tfLabel; verdict.className = 'ta-verdict sell'; }
     }
     var banner = $('scan-pattern-banner');
     if (banner) banner.innerHTML = (analysis.reasons || []).join('<br>');
