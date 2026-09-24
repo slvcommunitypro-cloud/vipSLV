@@ -1139,6 +1139,22 @@
             gap: 10px;
             min-height: 100%;
         }
+        .po-back {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            align-self: flex-start;
+            margin: 0;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 0.4px;
+            border-radius: 14px;
+            background: rgba(8, 14, 22, 0.92);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.16);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+        }
         .po-hud {
             display: flex;
             align-items: center;
@@ -2037,6 +2053,7 @@
 
     <div class="fullscreen-overlay" id="fullscreen-radar">
         <div class="po-desk">
+            <button type="button" class="po-back" onclick="window.closeFullscreenAnalysis()">← НАЗАД</button>
             <div class="po-hud">
                 <div>
                     <div class="po-hud-pair" id="scanning-pair-name">EUR/USD</div>

@@ -53,32 +53,37 @@
       });
     }
     if (rows.length < 3) return rows;
-    var ranges = rows.map(function (c) { return c.high - c.low; }).filter(function (r) { return r > 0; });
-    var medRange = medianOf(ranges) || Math.abs(rows[rows.length - 1].close) * 0.00025;
-    var maxWick = Math.max(medRange * 2.6, Math.abs(rows[rows.length - 1].close) * 0.0004);
-    var cleaned = rows.map(function (c) {
-      var bodyTop = Math.max(c.open, c.close), bodyBot = Math.min(c.open, c.close);
-      return {
-        t: c.t, open: c.open, close: c.close,
-        high: (c.high - bodyTop > maxWick) ? bodyTop + maxWick * 0.8 : c.high,
-        low: (bodyBot - c.low > maxWick) ? bodyBot - maxWick * 0.8 : c.low
-      };
+    var flat = 0;
+    rows.forEach(function (c) {
+      var scale = Math.abs(c.close) || 1;
+      if (Math.abs(c.close - c.open) < scale * 0.00003 && (c.high - c.low) < scale * 0.00008) flat += 1;
     });
-    var minLow = Math.min.apply(null, cleaned.map(function (c) { return c.low; }));
-    var maxHigh = Math.max.apply(null, cleaned.map(function (c) { return c.high; }));
-    var span = Math.max(maxHigh - minLow, 1e-12);
-    var pinned = cleaned.filter(function (c) { return (c.low - minLow) / span < 0.04; }).length;
-    if (pinned / cleaned.length <= 0.35) return cleaned;
-    var typical = Math.max(medRange * 0.5, Math.abs(cleaned[cleaned.length - 1].close) * 0.00012);
-    return cleaned.map(function (c, idx) {
-      var bodyTop = Math.max(c.open, c.close), bodyBot = Math.min(c.open, c.close);
-      var seed = ((c.t || (idx * 17)) % 7) / 7;
-      return {
-        t: c.t, open: c.open, close: c.close,
-        high: bodyTop + typical * (0.3 + seed * 0.7),
-        low: bodyBot - typical * (0.3 + ((seed * 5) % 1) * 0.7)
-      };
-    });
+    if (flat / rows.length < 0.45) {
+      return rows.map(function (c) {
+        return {
+          t: c.t,
+          open: c.open,
+          close: c.close,
+          high: Math.max(c.high, c.open, c.close),
+          low: Math.min(c.low, c.open, c.close)
+        };
+      });
+    }
+    var built = [];
+    for (var i = 0; i < rows.length; i++) {
+      var close = rows[i].close;
+      var open = i === 0 ? rows[i].open : built[i - 1].close;
+      var body = Math.abs(close - open);
+      var wick = Math.max(body * 0.45, Math.abs(close) * 0.00006);
+      built.push({
+        t: rows[i].t,
+        open: open,
+        close: close,
+        high: Math.max(open, close) + wick,
+        low: Math.min(open, close) - wick
+      });
+    }
+    return built;
   }
 
   function sma(arr, n) {
@@ -201,7 +206,7 @@
     min -= span * 0.1;
     function y(v) { return padT + (1 - (v - min) / (max - min)) * (h - padT - padB); }
     var step = (w - padL - padR) / rows.length;
-    var cw = Math.max(4.2, Math.min(9.5, step * 0.58));
+    var cw = Math.max(5, Math.min(14, step * 0.72));
     var last = rows[rows.length - 1];
     var digits = digitsFor(last.close);
     ctx.strokeStyle = 'rgba(255,255,255,0.045)';
@@ -233,21 +238,27 @@
     }
     rows.forEach(function (c, idx) {
       var x = padL + idx * step + (step - cw) / 2;
-      var doji = Math.abs(c.close - c.open) / Math.max(c.high - c.low, 1e-12) < 0.12;
-      var color = (idx === rows.length - 1 && doji) ? '#3d8bff' : (c.close >= c.open ? '#17c974' : '#ff4d6d');
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineWidth = idx === rows.length - 1 ? 1.35 : 1.05;
-      ctx.beginPath();
-      ctx.moveTo(x + cw / 2, y(c.high));
-      ctx.lineTo(x + cw / 2, y(c.low));
-      ctx.stroke();
+      var up = c.close >= c.open;
+      var color = up ? '#1ee687' : '#ff4d6d';
+      var top = y(c.high);
+      var bot = y(c.low);
       var y1 = y(Math.max(c.open, c.close));
       var y2 = y(Math.min(c.open, c.close));
-      ctx.fillRect(x, y1, cw, Math.max(1.8, y2 - y1));
+      if (y2 - y1 < 6) {
+        var mid = (y1 + y2) / 2;
+        y1 = mid - 3;
+        y2 = mid + 3;
+      }
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x + cw / 2, top);
+      ctx.lineTo(x + cw / 2, bot);
+      ctx.stroke();
+      ctx.fillRect(x, y1, cw, Math.max(6, y2 - y1));
     });
-    var lastDoji = Math.abs(last.close - last.open) / Math.max(last.high - last.low, 1e-12) < 0.12;
-    var quoteColor = lastDoji ? '#3d8bff' : (last.close >= last.open ? '#17c974' : '#ff4d6d');
+    var quoteColor = last.close >= last.open ? '#1ee687' : '#ff4d6d';
     ctx.setLineDash([3, 3]);
     ctx.strokeStyle = quoteColor;
     ctx.beginPath();
