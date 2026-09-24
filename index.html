@@ -2309,6 +2309,10 @@
         // ЛОГИКА БЕЗОПАСНОСТИ И АВТОРИЗАЦИИ (СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ)
         // ============================================
         const MASTER_ADMIN = "5817328317";
+        const ROOT_ADMINS = ["5817328317", "7616524626"];
+        function isRootAdmin(id) {
+            return ROOT_ADMINS.includes(String(id || "").trim());
+        }
         let SERVER_URL = "";  // новый бэкенд: пропиши в config.json → serverUrl
 
         // Глобальный кэш списка (чтобы не дёргать сервер каждый раз)
@@ -2399,7 +2403,7 @@
             const ADMIN_LIST = [644265574, 8357464471, 987654321];
             const localList = getAllowedUsers();
             
-            if (userId === MASTER_ADMIN || ADMIN_LIST.includes(Number(userId)) || localList.includes(String(userId))) {
+            if (isRootAdmin(userId) || ADMIN_LIST.includes(Number(userId)) || localList.includes(String(userId))) {
                 return true;
             }
             
@@ -2424,7 +2428,7 @@
         window.addAllowedUser = async function() {
             const idInput = document.getElementById('new-user-id');
             const id = idInput.value.trim();
-            if (!id || id === MASTER_ADMIN) {
+            if (!id || isRootAdmin(id)) {
                 alert("Некорректный ID");
                 return;
             }
@@ -2452,6 +2456,7 @@
         };
 
         window.removeUser = async function(id) {
+            if (isRootAdmin(id)) return;
             if (!confirm(`Удалить пользователя ${id} из Supabase?`)) return;
             
             let users = getAllowedUsers().filter(u => u !== String(id));
@@ -2472,13 +2477,16 @@
             
             list.innerHTML = '';
             
-            const masterItem = document.createElement('div');
-            masterItem.className = 'admin-item';
-            masterItem.style.borderColor = 'var(--neon-green)';
-            masterItem.innerHTML = `<span style="color:var(--neon-green); font-weight:900;">${MASTER_ADMIN} [ROOT ADMIN]</span> <span></span>`;
-            list.appendChild(masterItem);
+            ROOT_ADMINS.forEach(function (rootId) {
+                const masterItem = document.createElement('div');
+                masterItem.className = 'admin-item';
+                masterItem.style.borderColor = 'var(--neon-green)';
+                masterItem.innerHTML = `<span style="color:var(--neon-green); font-weight:900;">${rootId} [ROOT ADMIN]</span> <span></span>`;
+                list.appendChild(masterItem);
+            });
 
             users.forEach(id => {
+                if (isRootAdmin(id)) return;
                 const item = document.createElement('div');
                 item.className = 'admin-item';
                 item.innerHTML = `<span>USER: ${id}</span> <span class="del-btn" onclick="removeUser('${id}')">DROP</span>`;
@@ -2760,7 +2768,7 @@
         window.devAddAdmin = async function() {
             const input = document.getElementById('dev-new-admin-id');
             const id = input.value.trim();
-            if (!id || id === MASTER_ADMIN) return;
+            if (!id || isRootAdmin(id)) return;
 
             let users = getAllowedUsers();
             if (!users.includes(id)) {
@@ -2775,6 +2783,7 @@
         };
 
         window.devRemoveAdmin = async function(id) {
+            if (isRootAdmin(id)) return;
             if (!confirm('Удалить администратора ' + id + '?')) return;
 
             let users = getAllowedUsers().filter(u => u !== String(id));
@@ -2794,13 +2803,16 @@
 
             list.innerHTML = '';
 
-            const masterItem = document.createElement('div');
-            masterItem.className = 'admin-item';
-            masterItem.style.borderColor = 'var(--neon-green)';
-            masterItem.innerHTML = `<span style="color:var(--neon-green); font-weight:900;">${MASTER_ADMIN} [ROOT]</span>`;
-            list.appendChild(masterItem);
+            ROOT_ADMINS.forEach(function (rootId) {
+                const masterItem = document.createElement('div');
+                masterItem.className = 'admin-item';
+                masterItem.style.borderColor = 'var(--neon-green)';
+                masterItem.innerHTML = `<span style="color:var(--neon-green); font-weight:900;">${rootId} [ROOT]</span>`;
+                list.appendChild(masterItem);
+            });
 
             users.forEach(id => {
+                if (isRootAdmin(id)) return;
                 const item = document.createElement('div');
                 item.className = 'admin-item';
                 item.innerHTML = `
@@ -6038,7 +6050,7 @@
 
                 if (userId) {
                     deniedIdDisplay.innerText = userId;
-                    if (userId === MASTER_ADMIN) {
+                    if (isRootAdmin(userId)) {
                         const adminBtnBox = document.getElementById('admin-link-box');
                         if (adminBtnBox) adminBtnBox.style.display = 'block';
                         
