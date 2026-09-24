@@ -412,11 +412,14 @@
           return { t: c.t || (c.time * 1000), open: +c.open, high: +c.high, low: +c.low, close: +c.close };
         }));
         var src = data.source || '';
-        if (!/pocket/i.test(src)) src = pocketLive ? 'pocketoption-api' : (src || 'fallback-market');
+        if (/pocketoption-demo/i.test(src)) src = 'pocketoption-demo';
+        else if (/pocketoption-api/i.test(src)) src = 'pocketoption-api';
+        else if (pocketLive) src = 'pocketoption-api';
+        else src = src || 'fallback-market';
         list.__source = src;
         return list;
       })(),
-      source: (data.source && /pocket/i.test(data.source)) ? data.source : (pocketLive ? 'pocketoption-api' : (data.source || 'fallback-market'))
+      source: /pocketoption-demo/i.test(data.source || '') ? 'pocketoption-demo' : ((data.source && /pocketoption-api/i.test(data.source)) ? data.source : (pocketLive ? 'pocketoption-api' : (data.source || 'fallback-market')))
     };
   }
 
