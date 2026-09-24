@@ -438,6 +438,7 @@
     if (!total) return false;
     liveCats = cats;
     liveTotal = total;
+    window.__SLV_LIVE_PAIRS__ = true;
     return true;
   }
 

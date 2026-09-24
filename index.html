@@ -3075,59 +3075,9 @@
                 { name: "ZigZag + Fibonacci", tf: "M1/M5", settings: "Глубина 12, Отклонение 5", rules: "Ищи retracement 0.618/0.786 от импульса ZigZag. Вход на уровнях Фибо + паттерн.", accuracy: "68%" }
             ];
 
-            // ==================== ПОЛНЫЙ СПИСОК АКТИВОВ SLV DESK (разделён по категориям) ====================
-            const ASSET_CATEGORIES = {
-                forex: [
-                    "AED/CNY OTC","AUD/CHF OTC","AUD/CAD OTC","AUD/JPY","AUD/JPY OTC","AUD/NZD OTC","AUD/USD","AUD/USD OTC",
-                    "BHD/CNY OTC","CAD/CHF OTC","CAD/JPY","CAD/JPY OTC","CHF/JPY","CHF/JPY OTC","CHF/NOK OTC",
-                    "EUR/AUD","EUR/CAD","EUR/CHF","EUR/CHF OTC","EUR/GBP","EUR/GBP OTC","EUR/HUF OTC","EUR/JPY","EUR/JPY OTC",
-                    "EUR/NZD OTC","EUR/TRY OTC","EUR/USD","EUR/USD OTC",
-                    "GBP/AUD","GBP/AUD OTC","GBP/CHF","GBP/JPY","GBP/JPY OTC","GBP/USD","GBP/USD OTC",
-                    "JOD/CNY OTC","KES/USD OTC","LBP/USD OTC","MAD/USD OTC","NGN/USD OTC",
-                    "NZD/JPY OTC","NZD/USD OTC",
-                    "OMR/CNY OTC","QAR/CNY OTC","SAR/CNY OTC","UAH/USD OTC","YER/USD OTC","ZAR/USD OTC",
-                    "USD/ARS OTC","USD/BDT OTC","USD/BRL OTC","USD/CAD","USD/CAD OTC","USD/CHF","USD/CHF OTC",
-                    "USD/CLP OTC","USD/CNH OTC","USD/COP OTC","USD/DZD OTC","USD/EGP OTC","USD/IDR OTC",
-                    "USD/INR OTC","USD/JPY","USD/JPY OTC","USD/MXN OTC","USD/MYR OTC","USD/PHP OTC",
-                    "USD/PKR OTC","USD/RUB OTC","USD/SGD OTC","USD/THB OTC","USD/VND OTC"
-                ],
-                crypto: [
-                    "Avalanche OTC","Bitcoin ETF OTC","Bitcoin OTC","Polygon OTC","Cardano OTC","BNB OTC",
-                    "Polkadot OTC","Chainlink OTC","Solana OTC","Litecoin OTC","Toncoin OTC","Dogecoin OTC",
-                    "TRON OTC","Ethereum OTC","Bitcoin","Ethereum","Dash","BCH/EUR","BCH/GBP","BCH/JPY",
-                    "BTC/GBP","BTC/JPY","Chainlink"
-                ],
-                commodities: [
-                    "Brent Oil OTC","Silver OTC","Gold OTC","Natural Gas OTC","Palladium spot OTC",
-                    "Platinum spot OTC","WTI Crude Oil OTC","Brent Oil","WTI Crude Oil","XAG/EUR","Silver",
-                    "XAU/EUR","Gold","Natural Gas","Palladium spot","Platinum spot"
-                ],
-                stocks: [
-                    "Cisco OTC","FACEBOOK INC OTC","McDonald's OTC","Microsoft OTC","Advanced Micro Devices OTC",
-                    "Amazon OTC","Coinbase Global OTC","FedEx OTC","Netflix OTC","VISA OTC","Pfizer Inc OTC",
-                    "VIX OTC","Palantir Technologies OTC","Alibaba OTC","Apple OTC","Boeing Company OTC",
-                    "Intel OTC","Johnson & Johnson OTC","American Express OTC","Marathon Digital Holdings OTC",
-                    "Boeing Company","FACEBOOK INC","Johnson & Johnson","JPMorgan Chase & Co","McDonald's",
-                    "Microsoft","Tesla","Alibaba","Citigroup Inc","Citigroup Inc OTC","Netflix","Cisco",
-                    "ExxonMobil","Tesla OTC","ExxonMobil OTC","Intel","GameStop Corp OTC","Apple",
-                    "American Express","Pfizer Inc"
-                ],
-                indices: [
-                    "AUS 200 OTC","100GBP OTC","DJI30 OTC","E35EUR OTC","F40EUR OTC","JPN225 OTC",
-                    "US100 OTC","SP500 OTC","100GBP","AEX 25","CAC 40","D30/EUR","D30EUR OTC","DJI30",
-                    "E35EUR","E50/EUR","E50EUR OTC","F40/EUR","HONG KONG 33","JPN225","US100","SMI 20",
-                    "SP500","AUS 200"
-                ]
-            };
-
-            // Flatten for backward compatibility
-            const ALL_POCKET_OPTION_ASSETS = [
-                ...ASSET_CATEGORIES.forex,
-                ...ASSET_CATEGORIES.crypto,
-                ...ASSET_CATEGORIES.commodities,
-                ...ASSET_CATEGORIES.stocks,
-                ...ASSET_CATEGORIES.indices
-            ];
+            // Старый сохранённый список пар удалён. Сканер берёт только живые пары Pocket Option.
+            const ASSET_CATEGORIES = { forex: [], crypto: [], commodities: [], stocks: [], indices: [] };
+            const ALL_POCKET_OPTION_ASSETS = [];
 
             // ==================== PATTERN CHART GENERATOR (реалистичные 6-8 свечей + геометрия) ====================
             function getPatternChartSvg(patternName, isBig = false) {
@@ -3768,8 +3718,7 @@
                     targetScreen.style.setProperty('display', 'block', 'important');
                     
                     if (screenId === 'bot-analysis-screen') {
-                        setAssetCategory('forex'); // Открываем сразу раздел "Валюты"
-                        setTimeout(() => filterAnalysisPairs(), 100);
+                        setAssetCategory('forex');
                     }
                     if (screenId === 'profile-screen') updateProfileAiHint();
                     if (screenId === 'sessions-screen') {
@@ -4856,23 +4805,10 @@
             }
 
             function filterAnalysisPairs() {
-                const searchInput = document.getElementById('analysis-search-input');
-                const q = searchInput ? searchInput.value.toUpperCase().trim() : '';
-                
-                // Всегда строго по выбранной категории (без "ВСЕ")
-                let baseList = ASSET_CATEGORIES[currentAssetCategory] || ASSET_CATEGORIES.forex;
-                
-                // Apply search within the category
-                let filtered = baseList;
-                if (q) {
-                    filtered = baseList.filter(p => p.toUpperCase().includes(q));
-                }
-                
-                populateAnalysisPairs(filtered);
-                
-                // Update count to show only current category size
-                const countEl = document.getElementById('total-assets-count');
-                if (countEl) countEl.innerText = baseList.length;
+                if (window.__SLV_LIVE_PAIRS__) return;
+                const renderBox = document.getElementById('analysis-pairs-render-box');
+                if (!renderBox) return;
+                renderBox.innerHTML = '<div style="color:#9a9484;text-align:center;font-size:13px;padding:30px;font-weight:600;">Загрузка пар Pocket Option…</div>';
             }
             window.filterAnalysisPairs = filterAnalysisPairs;
 
@@ -5746,7 +5682,6 @@
                         }
                         if (statusText) statusText.innerText = "Прямой шлюз с сервером Render: СТАБИЛЕН";
                         
-                        filterAnalysisPairs();
                     } else {
                         throw new Error("API Reject");
                     }
@@ -5757,7 +5692,6 @@
                         indicator.style.background = "linear-gradient(90deg, var(--neon-red) 0%, #b32e25 100%)";
                     }
                     if (statusText) statusText.innerHTML = `<span style="color:var(--neon-red);">Повторное подключение к хосту ${SERVER_URL}...</span>`;
-                    filterAnalysisPairs(); 
                 }
             }
 
